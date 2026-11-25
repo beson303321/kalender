@@ -1,0 +1,70 @@
+rules_version = '2';
+
+// Sicherheitsregeln für die Datenbank.
+// Diese Datei in der Firebase-Konsole einfügen: Firestore Database → Regeln → Veröffentlichen.
+//
+//  - Nur die zwei Konten klasse@26atb1.ch und admin@26atb1.ch dürfen überhaupt etwas sehen.
+//  - Beide dürfen neue Einträge erstellen.
+//  - Nur der Admin darf Einträge ändern oder löschen und Kategorien verwalten.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'admin@26atb1.ch';
+    }
+
+    function isMember() {
+      return request.auth != null
+        && request.auth.token.email in ['klasse@26atb1.ch', 'admin@26atb1.ch'];
+    }
+
+    function validEvent(d) {
+      return d.title is string && d.title.size() > 0 && d.title.size() <= 100
+        && d.category is string && d.category.size() <= 60
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.time is string && (d.time == '' || d.time.matches('^[0-9]{2}:[0-9]{2}$'))
+        && d.subject is string && d.subject.size() <= 60
+        && d.note is string && d.note.size() <= 1000;
+    }
+
+    match /events/{eventId} {
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['title', 'category', 'date', 'time', 'subject', 'note', 'createdBy', 'createdAt'])
+        && validEvent(request.resource.data)
+        && request.resource.data.createdBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['title', 'category', 'date', 'time', 'subject', 'note', 'createdBy', 'createdAt'])
+        && validEvent(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isMember();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['name', 'color', 'order'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.color is string
+        && request.resource.data.color.matches('^#[0-9a-fA-F]{6}$')
+        && request.resource.data.order is number;
+
+      allow delete: if isAdmin();
+    }
+
+    // Alles andere ist verboten
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
