@@ -5,8 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>26aTB1 – Termine</title>
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#5b5bd6">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='10' width='52' height='48' rx='10' fill='%235b5bd6'/%3E%3Crect x='6' y='10' width='52' height='14' rx='7' fill='%234343b8'/%3E%3Crect x='18' y='4' width='6' height='12' rx='3' fill='%234343b8'/%3E%3Crect x='40' y='4' width='6' height='12' rx='3' fill='%234343b8'/%3E%3Ccircle cx='22' cy='38' r='4' fill='white'/%3E%3Ccircle cx='32' cy='38' r='4' fill='white'/%3E%3Ccircle cx='42' cy='38' r='4' fill='white' opacity='.5'/%3E%3C/svg%3E">
+  <meta name="description" content="Prüfungen, Termine und Stundenplan der Klasse 26aTB1">
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)">
+
+  <!-- App aufs Handy -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="26aTB1">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -57,18 +68,31 @@
         <div class="view-toggle" role="tablist" aria-label="Ansicht">
           <button role="tab" data-view="calendar" class="active">
             <svg viewBox="0 0 24 24"><path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>
-            <span>Kalender</span>
+            <span>Monat</span>
+          </button>
+          <button role="tab" data-view="week">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM9.3 5v14M14.7 5v14M4 10h16"/></svg>
+            <span>Woche</span>
           </button>
           <button role="tab" data-view="list">
             <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>
             <span>Liste</span>
           </button>
+          <button role="tab" data-view="games">
+            <svg viewBox="0 0 24 24"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01M7.5 6h9A4.5 4.5 0 0 1 21 10.5v3.2a3.3 3.3 0 0 1-6 1.9L14 14h-4l-1 1.6a3.3 3.3 0 0 1-6-1.9v-3.2A4.5 4.5 0 0 1 7.5 6Z"/></svg>
+            <span>Spiele</span>
+          </button>
         </div>
 
         <div class="topbar-actions">
-          <button id="btn-categories" class="btn ghost admin-only" title="Kategorien verwalten">
+          <button id="btn-news" class="btn ghost news-btn" title="Was ist neu?">
+            <svg viewBox="0 0 24 24"><path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9ZM3 7h18v4H3zM12 7v14M12 7S10.5 3 8 3a2 2 0 0 0 0 4h4Zm0 0s1.5-4 4-4a2 2 0 0 1 0 4h-4Z"/></svg>
+            <span class="hide-sm">Neu</span>
+            <i class="news-dot" hidden></i>
+          </button>
+          <button id="btn-admin" class="btn ghost admin-only" title="Verwaltung: Kategorien und Import">
             <svg viewBox="0 0 24 24"><path d="M4 7h10M4 17h6M18 7h2M14 17h6M14 4v6M10 14v6"/></svg>
-            <span class="hide-sm">Kategorien</span>
+            <span class="hide-sm">Verwaltung</span>
           </button>
           <button id="btn-logout" class="btn ghost" title="Abmelden">
             <svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 8l-4 4 4 4M6 12h10"/></svg>
@@ -79,6 +103,16 @@
     </header>
 
     <main class="container">
+      <div id="install-banner" class="install-banner" hidden>
+        <img src="icons/icon-192.png" alt="" width="40" height="40">
+        <div class="install-text">
+          <b>Als App aufs Handy</b>
+          <span id="install-hint"></span>
+        </div>
+        <button id="install-btn" class="btn primary sm" hidden>Installieren</button>
+        <button id="install-close" class="icon-btn" aria-label="Hinweis schliessen"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+
       <div class="toolbar">
         <div id="filters" class="filters" aria-label="Nach Kategorie filtern"></div>
         <button id="btn-add" class="btn primary">
@@ -87,7 +121,7 @@
         </button>
       </div>
 
-      <!-- Kalenderansicht -->
+      <!-- Monatsansicht -->
       <section id="calendar-view" class="cal-layout">
         <div class="card cal-card">
           <div class="cal-head">
@@ -104,10 +138,35 @@
           <div id="cal-grid" class="cal-grid"></div>
         </div>
 
-        <aside class="card upcoming">
-          <h3>Demnächst</h3>
-          <div id="upcoming-list"></div>
+        <aside class="side">
+          <div class="card upcoming" id="today-card" hidden>
+            <h3 id="today-title">Heute</h3>
+            <div id="today-list"></div>
+          </div>
+          <div class="card upcoming">
+            <h3>Demnächst</h3>
+            <div id="upcoming-list"></div>
+          </div>
         </aside>
+      </section>
+
+      <!-- Wochenansicht -->
+      <section id="week-view" hidden>
+        <div class="card week-card">
+          <div class="cal-head">
+            <div>
+              <h2 id="week-title"></h2>
+              <p id="week-sub" class="muted small"></p>
+            </div>
+            <div class="cal-nav">
+              <button id="week-today" class="btn ghost sm">Heute</button>
+              <button id="week-prev" class="icon-btn" aria-label="Vorherige Woche"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <button id="week-next" class="icon-btn" aria-label="Nächste Woche"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+            </div>
+          </div>
+          <div id="week-notice"></div>
+          <div id="week-grid" class="week-grid"></div>
+        </div>
       </section>
 
       <!-- Listenansicht -->
@@ -125,6 +184,9 @@
         </div>
         <div id="event-list"></div>
       </section>
+
+      <!-- Spiele -->
+      <section id="games-view" hidden></section>
     </main>
   </div>
 

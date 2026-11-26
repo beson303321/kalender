@@ -5,7 +5,7 @@ rules_version = '2';
 //
 //  - Nur die zwei Konten klasse@26atb1.ch und admin@26atb1.ch dürfen überhaupt etwas sehen.
 //  - Beide dürfen neue Einträge erstellen.
-//  - Nur der Admin darf Einträge ändern oder löschen und Kategorien verwalten.
+//  - Nur der Admin darf Einträge ändern oder löschen, Kategorien verwalten und den Stundenplan importieren.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,30 +20,39 @@ service cloud.firestore {
         && request.auth.token.email in ['klasse@26atb1.ch', 'admin@26atb1.ch'];
     }
 
+    function isDate(s) { return s is string && s.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function isTimeOrEmpty(s) { return s is string && (s == '' || s.matches('^[0-9]{2}:[0-9]{2}$')); }
+
+    function eventKeys() {
+      return ['title', 'category', 'date', 'endDate', 'time', 'endTime', 'subject', 'note', 'room', 'source', 'createdBy', 'createdAt'];
+    }
+
     function validEvent(d) {
-      return d.title is string && d.title.size() > 0 && d.title.size() <= 100
+      return d.keys().hasOnly(eventKeys())
+        && d.keys().hasAll(['title', 'category', 'date', 'time', 'subject', 'note', 'createdBy', 'createdAt'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 100
         && d.category is string && d.category.size() <= 60
-        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && d.time is string && (d.time == '' || d.time.matches('^[0-9]{2}:[0-9]{2}$'))
+        && isDate(d.date)
+        && isTimeOrEmpty(d.time)
         && d.subject is string && d.subject.size() <= 60
-        && d.note is string && d.note.size() <= 1000;
+        && d.note is string && d.note.size() <= 1000
+        && (!('endDate' in d) || d.endDate == '' || (isDate(d.endDate) && d.endDate >= d.date))
+        && (!('endTime' in d) || isTimeOrEmpty(d.endTime))
+        && (!('room' in d) || (d.room is string && d.room.size() <= 30))
+        && (!('source' in d) || (d.source is string && d.source.size() <= 30));
     }
 
     match /events/{eventId} {
       allow read: if isMember();
 
+      // Klasse und Admin dürfen erstellen. Nur der Admin darf importierte Einträge (source) anlegen.
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['title', 'category', 'date', 'time', 'subject', 'note', 'createdBy', 'createdAt'])
         && validEvent(request.resource.data)
         && request.resource.data.createdBy == request.auth.token.email
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.createdAt == request.time
+        && (!('source' in request.resource.data) || request.resource.data.source == '' || isAdmin());
 
-      allow update: if isAdmin()
-        && request.resource.data.keys().hasOnly(['title', 'category', 'date', 'time', 'subject', 'note', 'createdBy', 'createdAt'])
-        && validEvent(request.resource.data)
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt;
-
+      allow update: if isAdmin() && validEvent(request.resource.data);
       allow delete: if isAdmin();
     }
 
@@ -58,6 +67,18 @@ service cloud.firestore {
         && request.resource.data.color is string
         && request.resource.data.color.matches('^#[0-9a-fA-F]{6}$')
         && request.resource.data.order is number;
+
+      allow delete: if isAdmin();
+    }
+
+    // Stundenplan (ein Dokument "main" mit allen Lektionen)
+    match /schedule/{docId} {
+      allow read: if isMember();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['lessons', 'from', 'to', 'updatedAt'])
+        && request.resource.data.lessons is list
+        && request.resource.data.lessons.size() <= 3000;
 
       allow delete: if isAdmin();
     }

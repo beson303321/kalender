@@ -26,11 +26,20 @@ async function createFirebaseStore() {
   ]);
   const { initializeApp } = appMod;
   const { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } = authMod;
-  const { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp } = fsMod;
+  const {
+    initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache,
+    collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch,
+  } = fsMod;
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  // Daten zusätzlich im Browser speichern → die App zeigt Termine auch ohne Internet
+  let db;
+  try {
+    db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  } catch {
+    db = initializeFirestore(app, { localCache: memoryLocalCache() });
+  }
 
   const watch = (name, cb, onError) =>
     onSnapshot(
@@ -46,23 +55,43 @@ async function createFirebaseStore() {
 
     watchEvents: (cb, onError) => watch("events", cb, onError),
     watchCategories: (cb, onError) => watch("categories", cb, onError),
+    watchSchedule: (cb, onError) =>
+      onSnapshot(doc(db, "schedule", "main"), (s) => cb(s.exists() ? s.data() : null), onError),
 
     addEvent: (data) =>
       addDoc(collection(db, "events"), { ...data, createdBy: auth.currentUser.email, createdAt: serverTimestamp() }),
     updateEvent: (id, data) => updateDoc(doc(db, "events", id), data),
     deleteEvent: (id) => deleteDoc(doc(db, "events", id)),
 
-    addCategory: (data) => addDoc(collection(db, "categories"), data),
+    addCategory: async (data) => (await addDoc(collection(db, "categories"), data)).id,
     updateCategory: (id, data) => updateDoc(doc(db, "categories", id), data),
     deleteCategory: (id) => deleteDoc(doc(db, "categories", id)),
+
+    // Schuldaten-Import (nur Admin): Termine mit festen IDs + Stundenplan in einem Rutsch
+    async importSchool({ events, schedule }) {
+      const items = events.map((e) => ["event", e]);
+      if (schedule) items.push(["schedule", schedule]);
+      for (let i = 0; i < items.length; i += 400) {
+        const batch = writeBatch(db);
+        for (const [kind, data] of items.slice(i, i + 400)) {
+          if (kind === "schedule") {
+            batch.set(doc(db, "schedule", "main"), { ...data, updatedAt: serverTimestamp() });
+          } else {
+            const { id, ...rest } = data;
+            batch.set(doc(db, "events", id), { ...rest, createdBy: auth.currentUser.email, createdAt: serverTimestamp() });
+          }
+        }
+        await batch.commit();
+      }
+    },
   };
 }
 
 // ─────────────────────────── Demo ───────────────────────────
 // Nur zum Ausprobieren, bevor Firebase eingerichtet ist.
 function createDemoStore() {
-  const KEY = "kalender-demo-v1";
-  const listeners = { events: new Set(), categories: new Set() };
+  const KEY = "kalender-demo-v2";
+  const listeners = { events: new Set(), categories: new Set(), schedule: new Set() };
   let authCb = () => {};
   let user = null;
 
@@ -78,14 +107,14 @@ function createDemoStore() {
 
   const save = () => write(localStorage, KEY, db);
   const list = (col) => Object.entries(db[col]).map(([id, v]) => ({ id, ...v }));
-  const emit = (col) => listeners[col].forEach((cb) => cb(list(col), { fromCache: false }));
+  const emit = (col) => listeners[col].forEach((cb) => cb(col === "schedule" ? db.schedule : list(col), { fromCache: false }));
   const newId = () => Math.random().toString(36).slice(2, 12);
   const denied = () => Object.assign(new Error("permission-denied"), { code: "permission-denied" });
   const requireAdmin = () => { if (!user?.isAdmin) throw denied(); };
 
   const watch = (col) => (cb) => {
     listeners[col].add(cb);
-    setTimeout(() => cb(list(col), { fromCache: false }), 0);
+    setTimeout(() => cb(col === "schedule" ? db.schedule : list(col), { fromCache: false }), 0);
     return () => listeners[col].delete(cb);
   };
 
@@ -100,6 +129,7 @@ function createDemoStore() {
     const ev = (title, category, offset, time, subject, note) =>
       ({ title, category, date: iso(offset), time, subject, note, createdBy: by, createdAt: now });
     return {
+      schedule: null,
       categories: {
         pruefung: { name: "Prüfung", color: "#e5484d", order: 0 },
         event: { name: "Event", color: "#3e63dd", order: 1 },
@@ -133,6 +163,7 @@ function createDemoStore() {
 
     watchEvents: watch("events"),
     watchCategories: watch("categories"),
+    watchSchedule: watch("schedule"),
 
     async addEvent(data) {
       if (!user) throw denied();
@@ -142,8 +173,15 @@ function createDemoStore() {
     async updateEvent(id, data) { requireAdmin(); Object.assign(db.events[id], data); save(); emit("events"); },
     async deleteEvent(id) { requireAdmin(); delete db.events[id]; save(); emit("events"); },
 
-    async addCategory(data) { requireAdmin(); db.categories[newId()] = data; save(); emit("categories"); },
+    async addCategory(data) { requireAdmin(); const id = newId(); db.categories[id] = data; save(); emit("categories"); return id; },
     async updateCategory(id, data) { requireAdmin(); Object.assign(db.categories[id], data); save(); emit("categories"); },
     async deleteCategory(id) { requireAdmin(); delete db.categories[id]; save(); emit("categories"); },
+
+    async importSchool({ events, schedule }) {
+      requireAdmin();
+      for (const { id, ...rest } of events) db.events[id] = { ...rest, createdBy: user.email, createdAt: Date.now() };
+      if (schedule) db.schedule = { ...schedule, updatedAt: Date.now() };
+      save(); emit("events"); emit("schedule");
+    },
   };
 }

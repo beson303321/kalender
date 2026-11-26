@@ -114,3 +114,20 @@ Die E-Mail-Adressen sind nicht echt. Deshalb funktioniert „Passwort zurückset
 3. Leg das Konto mit **derselben E-Mail** und dem neuen Passwort gleich wieder an.
 
 Die Termine bleiben dabei erhalten, und am Code muss nichts geändert werden.
+
+---
+
+## Update 1.1 einspielen (Stundenplan, Ferien, App, Neuigkeiten)
+
+Die Reihenfolge ist wichtig: **zuerst die Regeln, dann die Dateien.**
+
+1. **Regeln aktualisieren:** Firebase → Firestore Database → **Regeln**. Lösch alles und füg den neuen Inhalt von `firestore.rules` ein, dann klick auf **Veröffentlichen**.
+2. **Dateien auf GitHub hochladen:** Im Repository auf **Add file → Upload files** klicken. Zieh alles aus dem Ordner `26aTB1-website` hinein, auch die neuen Ordner `icons/`. Dann **Commit changes**. Bestehende Dateien werden dabei ersetzt.
+3. **Stundenplan importieren:** Melde dich auf https://26atb1.ch als `admin` an. Öffne **Verwaltung → Importieren …** und wähl die Datei `stundenplan-quelle.ics`. Sie liegt im Ordner `2_Students_math`, **nicht** im Website-Ordner. Das Häkchen bei den Infoblatt-Terminen lässt du gesetzt. Dann **Importieren**.
+
+## Stundenplan fürs 2. Semester
+Lade in schulNetz die neue Kalender-Datei (.ics) herunter und importiere sie wie oben. Bestehende Prüfungen und Ferien werden dabei aktualisiert, nicht doppelt angelegt.
+**Diese Datei nie auf GitHub hochladen.** Sie enthält einen persönlichen schulNetz-Link.
+
+## Neue Version ankündigen
+In `js/changelog.js` oben einen neuen Eintrag hinzufügen. Alle sehen dann einen roten Punkt beim Geschenk-Symbol 🎁.
