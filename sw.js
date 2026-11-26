@@ -1,6 +1,6 @@
 // Service Worker: macht die Seite als App installierbar und offline nutzbar.
 // Strategie: immer zuerst das Neueste aus dem Netz holen, bei fehlender Verbindung die gespeicherte Version.
-const CACHE = "kalender-v5";
+const CACHE = "kalender-v6";
 const SHELL = [
   "./", "./index.html", "./css/style.css",
   "./js/app.js", "./js/store.js", "./js/config.js", "./js/importer.js", "./js/changelog.js", "./js/games.js",
@@ -36,10 +36,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Eigene Dateien: zuerst Netz, sonst Speicher
+  // Eigene Dateien: zuerst Netz (immer beim Server nachfragen, ob es Neues gibt), sonst Speicher
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req).then((res) => {
+      fetch(req, { cache: "no-cache" }).then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
         return res;
       }).catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
