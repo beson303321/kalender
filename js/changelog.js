@@ -2,6 +2,15 @@
 // Bei einem neuen Update einfach oben einen Eintrag hinzufügen: Alle sehen dann einen Punkt beim Geschenk-Symbol.
 export const CHANGELOG = [
   {
+    version: "1.3",
+    date: "2026-11-26",
+    title: "Gemeinsame Dateien",
+    items: [
+      { icon: "📁", text: "Neuer Tab <b>Dateien</b> mit direktem Zugang zu unserem <b>OneDrive-Klassenordner</b>. Dort könnt ihr Zusammenfassungen und Unterlagen hochladen." },
+      { icon: "🔗", text: "<b>Wichtige Links</b> sammeln, sortiert nach Fach, z.B. Formelsammlung oder Lernvideos. Jeder kann Links teilen." },
+    ],
+  },
+  {
     version: "1.2",
     date: "2026-11-26",
     title: "Spiele für die Pause",

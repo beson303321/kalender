@@ -131,3 +131,9 @@ Lade in schulNetz die neue Kalender-Datei (.ics) herunter und importiere sie wie
 
 ## Neue Version ankündigen
 In `js/changelog.js` oben einen neuen Eintrag hinzufügen. Alle sehen dann einen roten Punkt beim Geschenk-Symbol 🎁.
+
+## Update 1.3: Dateien (OneDrive-Ordner)
+1. **Regeln aktualisieren:** Den neuen Inhalt von `firestore.rules` in Firebase unter **Regeln** einfügen und auf **Veröffentlichen** klicken.
+2. **Dateien auf GitHub hochladen:** wie immer den ganzen Inhalt von `26aTB1-website` hochladen.
+3. **Ordner verknüpfen:** Als `admin` anmelden und den Tab **Dateien** öffnen. Dort auf **„Ordner-Link eintragen“** klicken und den Freigabe-Link aus OneDrive einfügen.
+   In OneDrive bekommst du ihn so: Ordner auswählen → **Teilen** → bei den Einstellungen „Bearbeiten“ wählen → **Link kopieren**.

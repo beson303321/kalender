@@ -1,6 +1,6 @@
 // Service Worker: macht die Seite als App installierbar und offline nutzbar.
 // Strategie: immer zuerst das Neueste aus dem Netz holen, bei fehlender Verbindung die gespeicherte Version.
-const CACHE = "kalender-v4";
+const CACHE = "kalender-v5";
 const SHELL = [
   "./", "./index.html", "./css/style.css",
   "./js/app.js", "./js/store.js", "./js/config.js", "./js/importer.js", "./js/changelog.js", "./js/games.js",

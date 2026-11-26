@@ -28,7 +28,7 @@ async function createFirebaseStore() {
   const { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } = authMod;
   const {
     initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache,
-    collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch,
+    collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch,
   } = fsMod;
 
   const app = initializeApp(firebaseConfig);
@@ -67,6 +67,15 @@ async function createFirebaseStore() {
     updateCategory: (id, data) => updateDoc(doc(db, "categories", id), data),
     deleteCategory: (id) => deleteDoc(doc(db, "categories", id)),
 
+    // Dateien: Ordner-Link (Einstellungen) und gesammelte Links
+    watchSettings: (cb, onError) =>
+      onSnapshot(doc(db, "settings", "main"), (s) => cb(s.exists() ? s.data() : {}), onError),
+    saveSettings: (data) => setDoc(doc(db, "settings", "main"), data),
+    watchLinks: (cb, onError) => watch("links", cb, onError),
+    addLink: (data) =>
+      addDoc(collection(db, "links"), { ...data, createdBy: auth.currentUser.email, createdAt: serverTimestamp() }),
+    deleteLink: (id) => deleteDoc(doc(db, "links", id)),
+
     // Schuldaten-Import (nur Admin): Termine mit festen IDs + Stundenplan in einem Rutsch
     async importSchool({ events, schedule }) {
       const items = events.map((e) => ["event", e]);
@@ -91,7 +100,8 @@ async function createFirebaseStore() {
 // Nur zum Ausprobieren, bevor Firebase eingerichtet ist.
 function createDemoStore() {
   const KEY = "kalender-demo-v2";
-  const listeners = { events: new Set(), categories: new Set(), schedule: new Set() };
+  const listeners = { events: new Set(), categories: new Set(), schedule: new Set(), settings: new Set(), links: new Set() };
+  const SINGLE = new Set(["schedule", "settings"]); // einzelne Dokumente statt Listen
   let authCb = () => {};
   let user = null;
 
@@ -103,18 +113,20 @@ function createDemoStore() {
   };
 
   let db = read(localStorage, KEY) || seed();
+  db.links ||= {};
+  db.settings ||= {};
   user = read(sessionStorage, KEY + "-user");
 
   const save = () => write(localStorage, KEY, db);
   const list = (col) => Object.entries(db[col]).map(([id, v]) => ({ id, ...v }));
-  const emit = (col) => listeners[col].forEach((cb) => cb(col === "schedule" ? db.schedule : list(col), { fromCache: false }));
+  const emit = (col) => listeners[col].forEach((cb) => cb(SINGLE.has(col) ? db[col] : list(col), { fromCache: false }));
   const newId = () => Math.random().toString(36).slice(2, 12);
   const denied = () => Object.assign(new Error("permission-denied"), { code: "permission-denied" });
   const requireAdmin = () => { if (!user?.isAdmin) throw denied(); };
 
   const watch = (col) => (cb) => {
     listeners[col].add(cb);
-    setTimeout(() => cb(col === "schedule" ? db.schedule : list(col), { fromCache: false }), 0);
+    setTimeout(() => cb(SINGLE.has(col) ? db[col] : list(col), { fromCache: false }), 0);
     return () => listeners[col].delete(cb);
   };
 
@@ -176,6 +188,16 @@ function createDemoStore() {
     async addCategory(data) { requireAdmin(); const id = newId(); db.categories[id] = data; save(); emit("categories"); return id; },
     async updateCategory(id, data) { requireAdmin(); Object.assign(db.categories[id], data); save(); emit("categories"); },
     async deleteCategory(id) { requireAdmin(); delete db.categories[id]; save(); emit("categories"); },
+
+    watchSettings: watch("settings"),
+    async saveSettings(data) { requireAdmin(); db.settings = data; save(); emit("settings"); },
+    watchLinks: watch("links"),
+    async addLink(data) {
+      if (!user) throw denied();
+      db.links[newId()] = { ...data, createdBy: user.email, createdAt: Date.now() };
+      save(); emit("links");
+    },
+    async deleteLink(id) { requireAdmin(); delete db.links[id]; save(); emit("links"); },
 
     async importSchool({ events, schedule }) {
       requireAdmin();

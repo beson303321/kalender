@@ -83,6 +83,33 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Einstellungen (Link zum OneDrive-Ordner): alle lesen, nur Admin ändert
+    match /settings/{docId} {
+      allow read: if isMember();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['driveUrl'])
+        && request.resource.data.driveUrl is string
+        && request.resource.data.driveUrl.size() <= 1000
+        && (request.resource.data.driveUrl == '' || request.resource.data.driveUrl.matches('^https://.*'));
+    }
+
+    // Geteilte Links: alle dürfen teilen, nur der Admin löscht
+    match /links/{linkId} {
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['title', 'url', 'subject', 'note', 'createdBy', 'createdAt'])
+        && request.resource.data.keys().hasAll(['title', 'url', 'subject', 'note', 'createdBy', 'createdAt'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 100
+        && request.resource.data.url is string && request.resource.data.url.size() <= 1000 && request.resource.data.url.matches('^https://.*')
+        && request.resource.data.subject is string && request.resource.data.subject.size() <= 60
+        && request.resource.data.note is string && request.resource.data.note.size() <= 300
+        && request.resource.data.createdBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+
+      allow delete: if isAdmin();
+    }
+
     // Alles andere ist verboten
     match /{document=**} {
       allow read, write: if false;

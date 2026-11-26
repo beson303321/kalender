@@ -2,7 +2,7 @@ import { createStore, isDemo } from "./store.js";
 import { CHANGELOG } from "./changelog.js";
 import { SITE_NAME } from "./config.js";
 import {
-  parseICS, packLesson, unpackLesson, INFOBLATT_EVENTS,
+  parseICS, packLesson, unpackLesson, INFOBLATT_EVENTS, SUBJECTS,
   subjectName, teacherNames, SUBJECT_SHORT, SUBJECT_COLORS,
 } from "./importer.js";
 
@@ -72,12 +72,16 @@ const pref = {
 };
 
 // ───────────────────────── Zustand ─────────────────────────
-const VIEWS = ["calendar", "week", "list", "games"];
+const SUBJECT_NAMES_FOR_LINKS = Object.fromEntries(Object.entries(SUBJECTS).filter(([k]) => !["M", "IDPA"].includes(k)));
+const VIEWS = ["calendar", "week", "list", "games", "docs"];
 const state = {
   user: null,
   events: [],
   categories: [],
   schedule: null, // { from, to, byDate: Map(date → lessons[]) }
+  settings: {},
+  links: [],
+  docSearch: "",
   view: VIEWS.includes(pref.get("view", "")) ? pref.get("view") : "calendar",
   month: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   weekStart: (() => { const d = new Date(); const m = mondayOf(d); if (d.getDay() === 6 || d.getDay() === 0) m.setDate(m.getDate() + 7); return m; })(),
@@ -118,6 +122,8 @@ function showLogin() {
   state.events = [];
   state.categories = [];
   state.schedule = null;
+  state.settings = {};
+  state.links = [];
   seeded = false;
   closeModal();
   $("#boot").hidden = true;
@@ -174,6 +180,12 @@ function enterApp() {
       render();
       refreshOpenModal();
     }, onDataError),
+    store.watchSettings((data) => { state.settings = data || {}; if (state.view === "docs") renderDocs(); },
+      (err) => console.warn("Einstellungen:", err)),
+    store.watchLinks((links) => {
+      state.links = links.sort((a, b) => String(a.title).localeCompare(String(b.title), "de"));
+      if (state.view === "docs") renderDocs();
+    }, (err) => console.warn("Links:", err)),
     store.watchSchedule((data) => {
       state.schedule = buildSchedule(data);
       render();
@@ -240,8 +252,10 @@ function render() {
   $("#week-view").hidden = state.view !== "week";
   $("#list-view").hidden = state.view !== "list";
   $("#games-view").hidden = state.view !== "games";
-  $(".toolbar").hidden = state.view === "games";
+  $("#docs-view").hidden = state.view !== "docs";
+  $(".toolbar").hidden = state.view === "games" || state.view === "docs";
   if (state.view === "games") return showGames();
+  if (state.view === "docs") return renderDocs();
   renderFilters();
   if (state.view === "calendar") { renderCalendar(); renderToday(); renderUpcoming(); }
   else if (state.view === "week") renderWeek();
@@ -969,6 +983,200 @@ async function runImport(parsed, withInfo) {
   return events.length;
 }
 
+// ───────────────────────── Dateien (OneDrive-Ordner + Links) ─────────────────────────
+function safeUrl(u) {
+  try { const x = new URL(String(u || "").trim()); return x.protocol === "https:" ? x.href : ""; } catch { return ""; }
+}
+function linkIcon(url) {
+  const h = (() => { try { return new URL(url).hostname; } catch { return ""; } })();
+  if (/onedrive|sharepoint|1drv\.ms/.test(h)) return "☁️";
+  if (/docs\.google|drive\.google/.test(h)) return "📄";
+  if (/youtube|youtu\.be/.test(h)) return "▶️";
+  if (/ilias|bslenzburg|schulnetz/.test(h)) return "🏫";
+  return "🔗";
+}
+const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } };
+
+function renderDocs() {
+  const root = $("#docs-view");
+  const admin = state.user?.isAdmin;
+  const drive = safeUrl(state.settings?.driveUrl);
+  const q = state.docSearch.trim().toLowerCase();
+  const links = state.links.filter((l) => !q || [l.title, l.subject, l.note, l.url].join(" ").toLowerCase().includes(q));
+  const groups = new Map();
+  for (const l of links) {
+    const key = l.subject || "Allgemein";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(l);
+  }
+  const keys = [...groups.keys()].sort((a, b) => (a === "Allgemein") - (b === "Allgemein") || a.localeCompare(b, "de"));
+  const hadFocus = document.activeElement?.id === "doc-search";
+
+  root.innerHTML = `
+    <div class="docs-hero card">
+      <div class="docs-hero-icon">📁</div>
+      <div class="docs-hero-text">
+        <h2>Klassen-Ordner</h2>
+        <p class="muted">Zusammenfassungen, Notizen und Unterlagen an einem Ort. Hochladen geht direkt im OneDrive-Ordner.</p>
+      </div>
+      <div class="docs-hero-actions">
+        ${drive
+          ? `<a class="btn primary" href="${esc(drive)}" target="_blank" rel="noopener noreferrer">Ordner öffnen
+              <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>`
+          : `<span class="muted small">${admin ? "Noch kein Ordner verknüpft." : "Der Admin hat noch keinen Ordner verknüpft."}</span>`}
+        ${admin ? `<button class="btn ghost sm" data-edit-drive>${drive ? "Link ändern" : "Ordner-Link eintragen"}</button>` : ""}
+      </div>
+    </div>
+
+    ${drive ? `<div class="docs-steps">
+      <div><b>1</b> Ordner öffnen</div>
+      <div><b>2</b> In den passenden Fach-Ordner gehen</div>
+      <div><b>3</b> Datei hineinziehen oder „Hochladen“ tippen</div>
+    </div>` : ""}
+
+    <div class="docs-head">
+      <h3>Wichtige Links</h3>
+      <button class="btn primary sm" data-add-link><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Link</button>
+    </div>
+    <p class="muted small docs-sub">Direkte Links zu einzelnen Dateien oder Seiten, z.B. Formelsammlung, Lernvideo, Ilias-Kurs.</p>
+    ${state.links.length > 4 ? `<label class="search docs-search">
+      <svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4"/></svg>
+      <input id="doc-search" type="search" placeholder="Links durchsuchen" value="${esc(state.docSearch)}">
+    </label>` : ""}
+    ${keys.length ? keys.map((k) => `
+      <h4 class="month-head">${esc(k)}</h4>
+      <div class="card list-card">
+        ${groups.get(k).map((l) => {
+          const url = safeUrl(l.url);
+          return `<div class="link-row">
+            <a class="link-item" href="${esc(url || "#")}" target="_blank" rel="noopener noreferrer">
+              <span class="link-icon">${linkIcon(url)}</span>
+              <span class="li-main">
+                <span class="li-title">${esc(l.title)}</span>
+                <span class="li-meta"><span>${esc(hostOf(url))}</span>${l.note ? `<span>${esc(l.note)}</span>` : ""}</span>
+              </span>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+            </a>
+            ${admin ? `<button class="icon-btn danger-text" data-del-link="${esc(l.id)}" aria-label="Link löschen">
+              <svg viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>` : ""}
+          </div>`;
+        }).join("")}
+      </div>`).join("")
+      : `<div class="empty card"><div class="empty-icon">🔗</div>
+          <p><b>${q ? "Nichts gefunden" : "Noch keine Links"}</b></p>
+          <p class="muted">${q ? "Versuch einen anderen Suchbegriff." : "Teile den ersten nützlichen Link mit der Klasse."}</p></div>`}
+
+    <p class="docs-note">Bitte nur teilen, was erlaubt ist: keine eingescannten Lehrbücher und keine Prüfungen, die nicht von der Lehrperson freigegeben wurden.</p>`;
+
+  if (hadFocus) { const i = $("#doc-search"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+
+function openDriveForm() {
+  if (!state.user.isAdmin) return;
+  openModal(`
+    ${closeBtn}
+    <h2>Ordner-Link</h2>
+    <form id="drive-form" class="form" novalidate>
+      <label class="field">
+        <span>Link zum OneDrive-Ordner</span>
+        <input name="url" type="url" inputmode="url" value="${esc(state.settings?.driveUrl || "")}" placeholder="https://1drv.ms/f/…">
+      </label>
+      <p class="hint">In OneDrive: Ordner auswählen → <b>Teilen</b> → <b>Link kopieren</b>. Damit alle hochladen können, muss der Link „Bearbeiten“ erlauben.
+        Der Link ist nur für eingeloggte Personen sichtbar.</p>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>`, (body) => {
+    const form = $("#drive-form", body);
+    form.url.focus();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const raw = form.url.value.trim();
+      const url = raw ? safeUrl(raw) : "";
+      const errEl = $(".form-error", form);
+      if (raw && !url) { errEl.textContent = "Bitte einen vollständigen Link eingeben, der mit https:// beginnt."; errEl.hidden = false; return; }
+      try {
+        await store.saveSettings({ driveUrl: url });
+        closeModal();
+        toast(url ? "Ordner-Link gespeichert" : "Ordner-Link entfernt", "success");
+      } catch (err) {
+        console.error(err);
+        errEl.textContent = err?.code === "permission-denied"
+          ? "Keine Berechtigung. Sind die neuen Datenbank-Regeln in Firebase veröffentlicht?"
+          : "Speichern hat nicht geklappt. Bist du online?";
+        errEl.hidden = false;
+      }
+    });
+  });
+}
+
+function openLinkForm() {
+  const subjects = [...new Set([...Object.values(SUBJECT_NAMES_FOR_LINKS), ...state.links.map((l) => l.subject).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "de"));
+  openModal(`
+    ${closeBtn}
+    <h2>Link teilen</h2>
+    <form id="link-form" class="form" novalidate>
+      <label class="field"><span>Titel *</span><input name="title" maxlength="100" placeholder="z.B. Formelsammlung Mathe"></label>
+      <label class="field"><span>Link *</span><input name="url" type="url" inputmode="url" maxlength="1000" placeholder="https://…"></label>
+      <div class="row">
+        <label class="field">
+          <span>Fach</span>
+          <input name="subject" maxlength="60" list="link-subjects" placeholder="z.B. Mathematik">
+          <datalist id="link-subjects">${subjects.map((s) => `<option value="${esc(s)}">`).join("")}</datalist>
+        </label>
+        <label class="field"><span>Notiz</span><input name="note" maxlength="300" placeholder="optional"></label>
+      </div>
+      <p class="hint">Tipp: In OneDrive bei einer Datei auf <b>Teilen → Link kopieren</b> tippen und hier einfügen.
+        ${state.user.isAdmin ? "" : "Nur der Admin kann Links wieder löschen."}</p>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Teilen</button>
+      </div>
+    </form>`, (body) => {
+    const form = $("#link-form", body);
+    form.title.focus();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = $(".form-error", form);
+      const data = {
+        title: form.title.value.trim(),
+        url: safeUrl(form.url.value),
+        subject: form.subject.value.trim(),
+        note: form.note.value.trim(),
+      };
+      const problem = !data.title ? "Bitte gib einen Titel ein." :
+        !data.url ? "Bitte einen vollständigen Link eingeben, der mit https:// beginnt." :
+        state.links.some((l) => l.url === data.url) ? "Diesen Link gibt es schon." : "";
+      if (problem) { errEl.textContent = problem; errEl.hidden = false; return; }
+      const btn = $("button[type=submit]", form);
+      btn.disabled = true;
+      try {
+        await store.addLink(data);
+        closeModal();
+        toast("Link geteilt", "success");
+      } catch (err) {
+        console.error(err);
+        errEl.textContent = err?.code === "permission-denied"
+          ? "Keine Berechtigung. Sind die neuen Datenbank-Regeln in Firebase veröffentlicht?"
+          : "Speichern hat nicht geklappt. Bist du online?";
+        errEl.hidden = false;
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+async function deleteLink(id) {
+  const l = state.links.find((x) => x.id === id);
+  if (!l || !(await confirmBox(`Link „${l.title}“ löschen? Die Datei selbst in OneDrive bleibt erhalten.`))) return;
+  try { await store.deleteLink(id); toast("Link gelöscht", "success"); }
+  catch (err) { console.error(err); toast("Löschen hat nicht geklappt.", "error"); }
+}
+
 // ───────────────────────── Was ist neu? ─────────────────────────
 const latestVersion = CHANGELOG[0]?.version || "";
 function updateNewsDot() {
@@ -1106,14 +1314,23 @@ function bindStatic() {
   });
 
   $("#search").addEventListener("input", (e) => { state.search = e.target.value; renderList(); });
+  $("#docs-view").addEventListener("click", (e) => {
+    if (e.target.closest("[data-edit-drive]")) openDriveForm();
+    else if (e.target.closest("[data-add-link]")) openLinkForm();
+    else if (e.target.closest("[data-del-link]")) deleteLink(e.target.closest("[data-del-link]").dataset.delLink);
+  });
+  $("#docs-view").addEventListener("input", (e) => {
+    if (e.target.id === "doc-search") { state.docSearch = e.target.value; renderDocs(); }
+  });
   $("#show-past").addEventListener("change", (e) => { state.showPast = e.target.checked; renderList(); });
 
   modal.addEventListener("click", (e) => {
     if (e.target === modal) return closeModal();
-    const t = e.target.closest("[data-close],[data-id],[data-edit],[data-delete],[data-add-date],[data-del-cat],[data-open-import]");
+    const t = e.target.closest("[data-close],[data-id],[data-edit],[data-delete],[data-add-date],[data-del-cat],[data-open-import],[data-del-link]");
     if (!t) return;
     if (t.matches("[data-close]")) closeModal();
     else if (t.matches("[data-open-import]")) openImport();
+    else if (t.dataset.delLink) deleteLink(t.dataset.delLink);
     else if (t.dataset.edit) openEventForm(state.events.find((x) => x.id === t.dataset.edit));
     else if (t.dataset.delete) deleteEvent(t.dataset.delete);
     else if (t.dataset.addDate) openEventForm(null, t.dataset.addDate);
@@ -1125,7 +1342,7 @@ function bindStatic() {
 
   // Tastenkürzel: N = neuer Eintrag, ←/→ = blättern
   document.addEventListener("keydown", (e) => {
-    if (!state.user || modal.open || $("#confirm").open || state.view === "games") return;
+    if (!state.user || modal.open || $("#confirm").open || state.view === "games" || state.view === "docs") return;
     if (e.target.closest("input, textarea, select")) return;
     if (e.key === "n" || e.key === "N") { e.preventDefault(); openEventForm(); }
     if (e.key === "ArrowLeft") state.view === "week" ? shiftWeek(-1) : state.view === "calendar" && shiftMonth(-1);
